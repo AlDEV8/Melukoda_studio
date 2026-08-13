@@ -1,0 +1,80 @@
+name: Desktop release packages
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["studio-v*"]
+
+jobs:
+  package:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            os: windows-latest
+            encoder_target: windows-x64
+            bundles: msi,nsis
+          - name: Linux x64
+            os: ubuntu-22.04
+            encoder_target: linux-x64
+            bundles: appimage,deb
+          - name: macOS arm64
+            os: macos-latest
+            encoder_target: macos
+            bundles: app,dmg
+    defaults:
+      run:
+        working-directory: apps/studio-desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/studio-desktop/package-lock.json
+      - name: Install Linux desktop build prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - name: Install macOS encoder build prerequisites
+        if: runner.os == 'macOS'
+        run: brew install cmake pkg-config openssl@3 llvm
+      - name: Prepare Windows ASIO build toolchain
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install llvm --no-progress --limit-output -y
+          "LIBCLANG_PATH=C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - run: npm ci
+      - run: npm run check
+      - name: Verify shared native audio engine
+        run: |
+          cargo fmt --all --check
+          cargo clippy -p studio-desktop --all-targets -- -D warnings
+          cargo test -p studio-core
+      - name: Prepare verified Windows/Linux encoder
+        if: runner.os != 'macOS'
+        env:
+          MELUKODA_RELEASE_TARGET: ${{ matrix.encoder_target }}
+        run: npm run prepare:encoder
+      - name: Build pinned macOS encoder
+        if: runner.os == 'macOS'
+        run: bash scripts/build-macos-ffmpeg.sh
+      - name: Verify bundled encoder capabilities
+        shell: bash
+        run: |
+          chmod +x src-tauri/resources/ffmpeg || true
+          src-tauri/resources/ffmpeg -hide_banner -encoders | grep -E '(^| )aac( |$)'
+          src-tauri/resources/ffmpeg -hide_banner -protocols | grep -x ' srt'
+      - run: npm run tauri -- build --config src-tauri/tauri.release.json --bundles ${{ matrix.bundles }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Melukoda-Studio-${{ matrix.encoder_target }}
+          path: target/release/bundle/

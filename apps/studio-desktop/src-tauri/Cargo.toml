@@ -1,0 +1,27 @@
+[package]
+name = "studio-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Melukoda Studio Tauri desktop shell"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-clipboard-manager = "2"
+studio-core = { path = "../../../crates/studio-core" }
+ringbuf = "0.5"
+keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native-sync-persistent", "crypto-rust"] }
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+# Keep optional, platform-specific backends out of the other release builds. ASIO
+# deliberately ships in Windows packages: it is the low-latency path for the XR18.
+[target.'cfg(target_os = "windows")'.dependencies]
+cpal = { version = "0.18", features = ["asio", "realtime"] }
+
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+cpal = "0.18"

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Melukoda Studio",
+  "mainBinaryName": "Melukoda Studio",
+  "version": "0.1.0",
+  "identifier": "ee.melukoda.studio",
+  "build": { "beforeDevCommand": "npm run dev", "beforeBuildCommand": "npm run build", "devUrl": "http://localhost:1420", "frontendDist": "../dist" },
+  "app": { "windows": [{ "title": "Melukoda Studio", "width": 920, "height": 570, "minWidth": 700, "minHeight": 460 }], "security": { "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost" } },
+  "bundle": { "active": true, "targets": "all", "icon": ["icons/app-icon.png"], "category": "Music", "shortDescription": "Reliable contribution transmitter for festival radio", "copyright": "Copyright 2026 Melukoda Studio contributors", "macOS": { "infoPlist": "Info.plist" } }
+}

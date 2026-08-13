@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/studio-core",
+  "apps/studio-desktop/src-tauri",
+  "apps/melukoda-ingest",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["Melukoda Studio contributors"]
+repository = "https://example.invalid/melukoda-studio"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+chrono = { version = "0.4", features = ["serde"] }
+sha2 = "0.10"
+base64 = "0.22"

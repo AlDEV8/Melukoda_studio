@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Main Studio window capability","local":true,"windows":["main"],"permissions":["core:default","core:window:allow-is-always-on-top","core:window:allow-set-always-on-top","clipboard-manager:allow-write-text"]}}
