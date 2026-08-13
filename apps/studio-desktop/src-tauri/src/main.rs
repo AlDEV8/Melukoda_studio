@@ -1643,7 +1643,7 @@ fn connection_preflight(
         Some(value) if matches!(value.mode, OutputMode::SrtContribution) && !srt => {
             "SRT cannot be tested because this FFmpeg build has no SRT protocol.".into()
         }
-        Some(value) if !aac => "AAC-LC encoding is unavailable.".into(),
+        Some(_) if !aac => "AAC-LC encoding is unavailable.".into(),
         Some(value) if network_result.is_none() => {
             if matches!(value.mode, OutputMode::Icecast) {
                 "Host could not be resolved or the TCP port could not be reached.".into()
@@ -1678,7 +1678,7 @@ fn connection_preflight(
         Some(value) if matches!(value.mode, OutputMode::SrtContribution) && !srt => {
             "SRT profile blocked: this FFmpeg build has no SRT protocol.".into()
         }
-        Some(value) if !aac => "Profile blocked: this FFmpeg build has no AAC encoder.".into(),
+        Some(_) if !aac => "Profile blocked: this FFmpeg build has no AAC encoder.".into(),
         Some(value) if network_result.is_none() => format!(
             "Could not resolve or reach {}. Check host, port and firewall.",
             value.host
