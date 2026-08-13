@@ -3,7 +3,6 @@ resolver = "2"
 members = [
   "crates/studio-core",
   "apps/studio-desktop/src-tauri",
-  "apps/melukoda-ingest",
 ]
 
 [workspace.package]

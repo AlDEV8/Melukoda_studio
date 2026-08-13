@@ -77,4 +77,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Melukoda-Studio-${{ matrix.encoder_target }}
-          path: target/release/bundle/
+          path: ../../target/release/bundle/
