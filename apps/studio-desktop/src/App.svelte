@@ -141,6 +141,7 @@
   async function applyAlwaysOnTop() { try { await getCurrentWindow().setAlwaysOnTop(alwaysOnTop);status=alwaysOnTop?'Window pinned above other windows.':'Window is no longer pinned.'; } catch(error) { status=`Could not change always-on-top: ${String(error)}`; } }
   async function setCompactMode(enabled:boolean) {
     compactMode=enabled;
+    document.body.classList.toggle('compact-window',enabled);
     const window=getCurrentWindow();
     try {
       if(enabled) {
@@ -156,6 +157,7 @@
       }
     } catch(error) {
       compactMode=false;
+      document.body.classList.remove('compact-window');
       status=`Could not resize compact window: ${String(error)}`;
     }
   }
