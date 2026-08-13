@@ -1,6 +1,6 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core';
-  import { getCurrentWindow } from '@tauri-apps/api/window';
+  import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
   import { onMount } from 'svelte';
 
   type State = 'Ready'|'Connecting'|'Live'|'Buffering'|'Reconnecting'|'Catching up'|'Buffer exhausted'|'Error'|'Stopped';
@@ -38,6 +38,9 @@
   let loudnessGainDb = 0;
   let limiterActive = false;
   let compactMode = false;
+  const compactWindowSize = new LogicalSize(248, 248);
+  const studioMinimumSize = new LogicalSize(700, 460);
+  const studioWindowSize = new LogicalSize(920, 570);
   let alwaysOnTop = false;
   let audioBufferMs = 50;
   let listenerCount: number|null = null;
@@ -136,6 +139,26 @@
   async function applyLoudness() { const result=await call('set_loudness_settings',{enabled:loudnessEnabled,targetDbfs:Number(loudnessTargetDbfs)});if(result)status=result.message; }
   async function loadAlwaysOnTop() { try { alwaysOnTop=await getCurrentWindow().isAlwaysOnTop(); } catch(error) { status=`Could not read always-on-top state: ${String(error)}`; } }
   async function applyAlwaysOnTop() { try { await getCurrentWindow().setAlwaysOnTop(alwaysOnTop);status=alwaysOnTop?'Window pinned above other windows.':'Window is no longer pinned.'; } catch(error) { status=`Could not change always-on-top: ${String(error)}`; } }
+  async function setCompactMode(enabled:boolean) {
+    compactMode=enabled;
+    const window=getCurrentWindow();
+    try {
+      if(enabled) {
+        await window.setMinSize(compactWindowSize);
+        await window.setMaxSize(compactWindowSize);
+        await window.setSize(compactWindowSize);
+        status='Compact status window enabled.';
+      } else {
+        await window.setMaxSize(null);
+        await window.setMinSize(studioMinimumSize);
+        await window.setSize(studioWindowSize);
+        status='Full studio window restored.';
+      }
+    } catch(error) {
+      compactMode=false;
+      status=`Could not resize compact window: ${String(error)}`;
+    }
+  }
   async function chooseInput() { if(!selectedInput)return;const result=await call('select_input_device',{deviceId:selectedInput});if(result)status=result.message; }
   async function refreshMeter() {
     try { const result=await invoke<any>('meter_snapshot');meter={left:result.left_peak_dbfs,right:result.right_peak_dbfs,leftRms:result.left_rms_dbfs,rightRms:result.right_rms_dbfs,clips:result.clips};meterFrames=result.frames;meterError=result.stream_error || '';droppedSamples=result.dropped_samples || 0;activeInputChannels=result.input_channels || 0;activeOutputChannels=result.output_channels || 0;loudnessDbfs=result.loudness_dbfs ?? -96;loudnessGainDb=result.loudness_gain_db ?? 0;limiterActive=Boolean(result.limiting); }
@@ -194,7 +217,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 13.5c.1-.5.1-1 0-1.5l1.7-1.3a.5.5 0 0 0 .1-.7l-1.6-2.7a.5.5 0 0 0-.6-.2l-2 .8a7.4 7.4 0 0 0-1.3-.75l-.3-2.1a.5.5 0 0 0-.5-.4h-3.2a.5.5 0 0 0-.5.4l-.3 2.1c-.47.19-.9.44-1.3.75l-2-.8a.5.5 0 0 0-.6.2L5.4 9.98a.5.5 0 0 0 .1.7l1.7 1.3c-.1.5-.1 1 0 1.5l-1.7 1.3a.5.5 0 0 0-.1.7l1.6 2.7c.13.22.4.3.6.2l2-.8c.4.31.83.56 1.3.75l.3 2.1c.05.24.26.4.5.4h3.2c.24 0 .45-.16.5-.4l.3-2.1c.47-.19.9-.44 1.3-.75l2 .8c.2.08.47 0 .6-.2l1.6-2.7a.5.5 0 0 0-.1-.7l-1.7-1.3Z"/></svg>
       <span>Settings</span>
     </button>
-    <button class="icon-button" aria-label={compactMode?'Expand studio view':'Switch to compact status view'} on:click={()=>compactMode=!compactMode}>
+    <button class="icon-button" aria-label={compactMode?'Expand studio view':'Switch to compact status view'} on:click={()=>setCompactMode(!compactMode)}>
       <span>{compactMode?'Expand':'Compact'}</span>
     </button>
     <label class="pin-control" title="Keep Melukoda Studio above other windows"><input type="checkbox" bind:checked={alwaysOnTop} on:change={applyAlwaysOnTop} /> Pin on top</label>
@@ -202,10 +225,10 @@
 
   {#if compactMode}
     <section class="compact-console" aria-label="Compact stream status">
-      <div><span class="label">Stream</span><strong class:live={state==='Live'}>{state}</strong><small>{active}</small></div>
-      <div><span class="label">Listeners</span><strong>{listenerCount ?? '—'}</strong><small>{listenerStatus}</small></div>
-      <div><span class="label">Loudness · low CPU</span><strong>{loudnessDbfs.toFixed(1)} dBFS</strong><small>{loudnessEnabled ? `${loudnessGainDb >= 0?'+':''}${loudnessGainDb.toFixed(1)} dB gain${limiterActive?' · limiting':''}`:'Off'}</small></div>
-      <button class={['Live','Buffering','Reconnecting','Catching up'].includes(state)?'stop':'start'} on:click={['Live','Buffering','Reconnecting','Catching up'].includes(state)?stop:start}>{['Live','Buffering','Reconnecting','Catching up'].includes(state)?'Stop':'Start'}</button>
+      <div class="compact-title"><span class:live={state==='Live'} class:error={state==='Error'} class="compact-led"></span><strong>{state}</strong><small>{active}</small></div>
+      <div class="compact-metric"><span class="label">Listeners</span><strong>{listenerCount ?? '—'}</strong><small>{listenerStatus}</small></div>
+      <div class="compact-metric"><span class="label">Loudness · low CPU</span><strong>{loudnessDbfs.toFixed(1)} <small>dBFS</small></strong><small>{loudnessEnabled ? `${loudnessGainDb >= 0?'+':''}${loudnessGainDb.toFixed(1)} dB gain${limiterActive?' · limiting':''}`:'Off'}</small></div>
+      <button class={['Live','Buffering','Reconnecting','Catching up'].includes(state)?'stop':'start'} on:click={['Live','Buffering','Reconnecting','Catching up'].includes(state)?stop:start}>{['Live','Buffering','Reconnecting','Catching up'].includes(state)?'Stop stream':'Start stream'}</button>
     </section>
   {:else}
   <section class="console" aria-label="Broadcast control">
@@ -285,7 +308,7 @@
           {:else if settingsTab==='Diagnostics'}
             <h3>Diagnostics</h3><p class="help">Profile testing checks the configured endpoint and performs a short silent AAC publish: Icecast verifies its source credentials; SRT verifies its real transport handshake. Copied diagnostics redact secrets.</p><div class="actions"><button class="primary" on:click={testConnection}>Test profile</button><button on:click={checkEncoder}>Check encoder</button><button on:click={copyDiagnostics}>Copy diagnostics</button></div><pre>{diagnostic || 'No diagnostic run yet.'}</pre>
           {:else}
-            <h3>Application</h3><p class="help">Use Compact in the title bar for an always-readable stream status view. Pin on top keeps this native window above other applications until you turn it off. Reset removes saved profiles, saved credential references, selected input, and their associated system-vault credentials. It does not remove the application itself.</p><label class="pin-control settings-pin"><input type="checkbox" bind:checked={alwaysOnTop} on:change={applyAlwaysOnTop} /> Keep Melukoda Studio always on top</label><div class="actions"><button on:click={()=>compactMode=true}>Open compact status view</button><button class="danger" on:click={()=>confirm('Reset all saved application settings?') && call('reset_settings')}>Reset saved settings</button></div>
+            <h3>Application</h3><p class="help">Compact opens a fixed 248 × 248 px status window: stream state, listeners, loudness and one control. Pin on top keeps this native window above other applications until you turn it off. Reset removes saved profiles, saved credential references, selected input, and their associated system-vault credentials. It does not remove the application itself.</p><label class="pin-control settings-pin"><input type="checkbox" bind:checked={alwaysOnTop} on:change={applyAlwaysOnTop} /> Keep Melukoda Studio always on top</label><div class="actions"><button on:click={()=>setCompactMode(true)}>Open compact status window</button><button class="danger" on:click={()=>confirm('Reset all saved application settings?') && call('reset_settings')}>Reset saved settings</button></div>
           {/if}
         </div>
       </div>
