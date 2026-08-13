@@ -31,6 +31,8 @@ pub struct Profile {
     pub bitrate_kbps: u16,
     pub channels: u8,
     pub program_name: Option<String>,
+    #[serde(default)]
+    pub listener_stats_url: Option<String>,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -107,6 +109,7 @@ mod tests {
             bitrate_kbps: 128,
             channels: 2,
             program_name: None,
+            listener_stats_url: None,
         }
     }
     #[test]

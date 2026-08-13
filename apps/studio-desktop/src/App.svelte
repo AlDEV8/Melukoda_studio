@@ -7,7 +7,7 @@
   type Profile = {
     id:string; name:string; mode:'srt_contribution'|'icecast'; host:string; port:number;
     stream_id:string; mount:string; username:string; secret:{service:string;account:string}|null; credential_mode:'srt_contribution'|'icecast'|null;
-    tls:boolean; bitrate_kbps:number; channels:number; program_name:string;
+    tls:boolean; bitrate_kbps:number; channels:number; program_name:string; listener_stats_url?:string;
   };
   type SettingsTab = 'Profiles'|'Audio'|'Recording'|'Diagnostics'|'Application';
 
@@ -40,9 +40,11 @@
   let compactMode = false;
   let alwaysOnTop = false;
   let audioBufferMs = 50;
+  let listenerCount: number|null = null;
+  let listenerStatus = 'Server statistics not configured';
   let devices: {id:string;name:string;is_default:boolean;backend:string;sample_rate:number;input_channels:number;output_channels:number;supports_48khz:boolean}[] = [];
   let selectedInput = '';
-  let profile: Profile = { id: 'active', name: '', mode: 'srt_contribution', host: '', port: 9000, stream_id: '', mount: '/live', username: 'source', secret: null, credential_mode:null, tls: true, bitrate_kbps: 128, channels: 2, program_name: '' };
+  let profile: Profile = { id: 'active', name: '', mode: 'srt_contribution', host: '', port: 9000, stream_id: '', mount: '/live', username: 'source', secret: null, credential_mode:null, tls: true, bitrate_kbps: 128, channels: 2, program_name: '', listener_stats_url: '' };
   let profiles: Profile[] = [];
   const tabs: SettingsTab[] = ['Profiles','Audio','Recording','Diagnostics','Application'];
 
@@ -75,7 +77,7 @@
     if(result){encoder=result;if(!result.srt && profile.mode==='srt_contribution') profile.mode='icecast';diagnostic=JSON.stringify(result,null,2);status=result.available ? `Encoder found: ${result.version}` : result.version;}
   }
   function newProfile() {
-    profile={ id:crypto.randomUUID(), name:'', mode:encoder.srt ? 'srt_contribution':'icecast', host:'', port:encoder.srt ? 9000:8000, stream_id:'', mount:'/live', username:'source', secret:null, credential_mode:null, tls:true, bitrate_kbps:128, channels:2, program_name:'' };
+    profile={ id:crypto.randomUUID(), name:'', mode:encoder.srt ? 'srt_contribution':'icecast', host:'', port:encoder.srt ? 9000:8000, stream_id:'', mount:'/live', username:'source', secret:null, credential_mode:null, tls:true, bitrate_kbps:128, channels:2, program_name:'', listener_stats_url:'' };
     runtimeSecret=''; active='No profile selected';
   }
   async function loadProfiles() {
@@ -85,13 +87,13 @@
     try {
       const last=await invoke<string|null>('last_active_profile');
       const selected=profiles.find(item=>item.id===last);
-      if(selected){profile={...selected};active=selected.name;}
+      if(selected){profile={...selected,listener_stats_url:selected.listener_stats_url || ''};active=selected.name;}
     } catch { /* profile list remains usable when the marker is absent */ }
   }
   async function selectProfile(id:string) {
     const selected=profiles.find(item=>item.id===id);
     if(!selected) return;
-    profile={...selected};runtimeSecret='';active=selected.name;
+    profile={...selected,listener_stats_url:selected.listener_stats_url || ''};runtimeSecret='';active=selected.name;
     await call('set_active_profile',{id});
   }
   async function saveProfile(clearSecret=false) {
@@ -152,6 +154,21 @@
       isRecording=timing.recording_elapsed_ms!==null;
     } catch(error) { console.warn('Could not refresh session timing',error); }
   }
+  async function refreshListeners() {
+    const endpoint=profile.listener_stats_url?.trim();
+    if(!endpoint) { listenerCount=null; listenerStatus='Server statistics not configured'; return; }
+    try {
+      const response=await fetch(endpoint,{cache:'no-store'});
+      if(!response.ok) throw new Error(`HTTP ${response.status}`);
+      const result=await response.json();
+      if(!Number.isFinite(result.listeners) || result.listeners < 0) throw new Error('Invalid listener count');
+      listenerCount=Math.round(result.listeners);
+      listenerStatus=`Active HLS estimate · ${result.window_seconds || 30} s window`;
+    } catch(error) {
+      listenerCount=null;
+      listenerStatus=`Statistics unavailable: ${String(error)}`;
+    }
+  }
   function formatDuration(milliseconds:number) {
     const totalSeconds=Math.floor(milliseconds/1000);
     const hours=Math.floor(totalSeconds/3600);
@@ -160,7 +177,7 @@
     return `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}`;
   }
   async function refreshRuntime() { await Promise.all([refreshMeter(),refreshBroadcast()]); }
-  onMount(()=>{loadInputs();loadProfiles();void (async()=>{await call('start_input_meter');await loadAudioBuffer();await loadDirectMonitor();await loadLoudness();await loadAlwaysOnTop();await refreshTimers();})();checkEncoder();const runtimeTimer=window.setInterval(refreshRuntime,100);const timingTimer=window.setInterval(refreshTimers,250);return()=>{window.clearInterval(runtimeTimer);window.clearInterval(timingTimer);};});
+  onMount(()=>{loadInputs();loadProfiles();void (async()=>{await call('start_input_meter');await loadAudioBuffer();await loadDirectMonitor();await loadLoudness();await loadAlwaysOnTop();await refreshTimers();await refreshListeners();})();checkEncoder();const runtimeTimer=window.setInterval(refreshRuntime,100);const timingTimer=window.setInterval(refreshTimers,250);const listenerTimer=window.setInterval(refreshListeners,5000);return()=>{window.clearInterval(runtimeTimer);window.clearInterval(timingTimer);window.clearInterval(listenerTimer);};});
 </script>
 
 <svelte:head><meta name="color-scheme" content="dark" /><title>Melukoda Studio</title></svelte:head>
@@ -186,7 +203,7 @@
   {#if compactMode}
     <section class="compact-console" aria-label="Compact stream status">
       <div><span class="label">Stream</span><strong class:live={state==='Live'}>{state}</strong><small>{active}</small></div>
-      <div><span class="label">Listeners</span><strong>—</strong><small>Server statistics not configured</small></div>
+      <div><span class="label">Listeners</span><strong>{listenerCount ?? '—'}</strong><small>{listenerStatus}</small></div>
       <div><span class="label">Loudness · low CPU</span><strong>{loudnessDbfs.toFixed(1)} dBFS</strong><small>{loudnessEnabled ? `${loudnessGainDb >= 0?'+':''}${loudnessGainDb.toFixed(1)} dB gain${limiterActive?' · limiting':''}`:'Off'}</small></div>
       <button class={['Live','Buffering','Reconnecting','Catching up'].includes(state)?'stop':'start'} on:click={['Live','Buffering','Reconnecting','Catching up'].includes(state)?stop:start}>{['Live','Buffering','Reconnecting','Catching up'].includes(state)?'Stop':'Start'}</button>
     </section>
@@ -257,8 +274,8 @@
           {#if settingsTab==='Profiles'}
             <h3>Server profiles</h3><p class="help">A saved profile contains its address and encoder settings. Saving a password stores it in the operating-system credential vault, not the profile file.</p>
             <div class="profile-layout"><div class="profile-list"><div class="list-title">Saved profiles <button on:click={newProfile}>New</button></div>{#if profiles.length===0}<p class="muted">No saved profile yet.</p>{:else}{#each profiles as saved}<button class:chosen={saved.id===profile.id} on:click={()=>selectProfile(saved.id)}>{saved.name}<small>{saved.mode==='srt_contribution'?'SRT':'Icecast'} · {saved.host || 'host not set'}</small></button>{/each}{/if}</div>
-              <div><div class="form"><label>Name<input bind:value={profile.name} placeholder="Festival radio" /></label><label>Mode<select bind:value={profile.mode}><option value="srt_contribution" disabled={!encoder.srt}>SRT contribution</option><option value="icecast" disabled={!encoder.icecast}>Icecast / Shoutcast</option></select></label><label>Host<input bind:value={profile.host} placeholder="radio.example.org" /></label><label>Port<input type="number" bind:value={profile.port} /></label>{#if profile.mode==='srt_contribution'}<label>Stream ID<input bind:value={profile.stream_id} placeholder="festival-main" /></label><label>SRT passphrase<input bind:value={runtimeSecret} type="password" autocomplete="off" placeholder={profile.secret?'Saved securely — type to replace':'Optional — only if the listener requires encryption'} /></label>{:else}<label>Mount point<input bind:value={profile.mount} placeholder="/live" /></label><label>Username<input bind:value={profile.username} /></label><label>Password<input bind:value={runtimeSecret} type="password" autocomplete="off" placeholder={profile.secret?'Saved securely — type to replace':'Required'} /></label>{/if}<label>AAC-LC bitrate<select bind:value={profile.bitrate_kbps}><option value={96}>96 kbps stereo · economy</option><option value={128}>128 kbps stereo · standard</option><option value={160}>160 kbps stereo · high quality</option><option value={192}>192 kbps stereo · very high</option><option value={256}>256 kbps stereo · maximum</option><option value={320}>320 kbps stereo · maximum bandwidth</option></select></label></div>
-                <p class="muted">{profile.mode==='srt_contribution' ? (profile.secret?'SRT passphrase saved in the system vault. Leave the field empty to keep it.':'This SRT listener currently accepts an unencrypted contribution. Add a passphrase only after server-side SRT encryption is enabled.') : (profile.secret?'Credential saved in the system vault. Leave the field empty to keep it.':'No credential saved. Type one and save this profile to store it securely.')}</p>
+              <div><div class="form"><label>Name<input bind:value={profile.name} placeholder="Festival radio" /></label><label>Mode<select bind:value={profile.mode}><option value="srt_contribution" disabled={!encoder.srt}>SRT contribution</option><option value="icecast" disabled={!encoder.icecast}>Icecast / Shoutcast</option></select></label><label>Host<input bind:value={profile.host} placeholder="radio.example.org" /></label><label>Port<input type="number" bind:value={profile.port} /></label>{#if profile.mode==='srt_contribution'}<label>Stream ID<input bind:value={profile.stream_id} placeholder="festival-main" /></label><label>SRT passphrase<input bind:value={runtimeSecret} type="password" autocomplete="off" placeholder={profile.secret?'Saved securely — type to replace':'Optional — only if the listener requires encryption'} /></label>{:else}<label>Mount point<input bind:value={profile.mount} placeholder="/live" /></label><label>Username<input bind:value={profile.username} /></label><label>Password<input bind:value={runtimeSecret} type="password" autocomplete="off" placeholder={profile.secret?'Saved securely — type to replace':'Required'} /></label>{/if}<label>HLS statistics URL (optional)<input bind:value={profile.listener_stats_url} placeholder="https://stream.melukoda.ee/api/listeners" /></label><label>AAC-LC bitrate<select bind:value={profile.bitrate_kbps}><option value={96}>96 kbps stereo · economy</option><option value={128}>128 kbps stereo · standard</option><option value={160}>160 kbps stereo · high quality</option><option value={192}>192 kbps stereo · very high</option><option value={256}>256 kbps stereo · maximum</option><option value={320}>320 kbps stereo · maximum bandwidth</option></select></label></div>
+                <p class="muted">{profile.mode==='srt_contribution' ? (profile.secret?'SRT passphrase saved in the system vault. Leave the field empty to keep it.':'This SRT listener currently accepts an unencrypted contribution. Add a passphrase only after server-side SRT encryption is enabled.') : (profile.secret?'Credential saved in the system vault. Leave the field empty to keep it.':'No credential saved. Type one and save this profile to store it securely.')} Listener statistics are an active HLS estimate, not an exact session total.</p>
                 <div class="actions"><button class="primary" on:click={()=>saveProfile()}>Save profile</button><button on:click={duplicateProfile}>Duplicate</button><button on:click={testConnection}>Test profile</button>{#if profile.secret}<button on:click={removeSavedCredential}>Remove credential</button>{/if}<button class="danger" on:click={removeProfile}>Delete</button></div>
               </div></div>
           {:else if settingsTab==='Audio'}
